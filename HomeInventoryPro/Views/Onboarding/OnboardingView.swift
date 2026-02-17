@@ -48,7 +48,7 @@ struct OnboardingView: View {
                     }
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-                .frame(height: 600)
+                .frame(height: 500)
                 
                 Spacer()
                 
@@ -61,7 +61,7 @@ struct OnboardingView: View {
                             .animation(.spring(response: 0.3), value: currentPage)
                     }
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 16)
                 
                 // Get Started button (last page)
                 if currentPage == pages.count - 1 {
@@ -142,13 +142,13 @@ struct OnboardingPageView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 280, height: 280)
+                    .frame(width: 220, height: 220)
                     .blur(radius: 20)
                     .scaleEffect(iconScale)
                 
                 // Icon
                 Image(systemName: page.iconName)
-                    .font(.system(size: 120, weight: .light))
+                    .font(.system(size: 95, weight: .light))
                     .foregroundStyle(
                         LinearGradient(
                             colors: [page.iconColor, page.iconColor.opacity(0.7)],
