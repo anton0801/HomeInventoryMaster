@@ -2,6 +2,28 @@ import SwiftUI
 import PhotosUI
 import AVFoundation
 
+struct UnavailableView: View {
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                Image(geo.size.width > geo.size.height ? "wifi_problem_bg2" : "wifi_problem_bg")
+                    .resizable().scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .ignoresSafeArea()
+                    .opacity(0.4)
+                    .blur(radius: 6.5)
+                
+                Image("wifi_problem_alert")
+                    .resizable()
+                    .frame(width: 300, height: 260)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 struct AddItemView: View {
     @Environment(\.presentationMode) var presentationMode
     @StateObject private var viewModel = AddItemViewModel()

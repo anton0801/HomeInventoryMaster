@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct MaintenanceView: View {
     @StateObject private var coreDataManager = CoreDataManager.shared
@@ -703,3 +704,247 @@ struct AddMaintenanceTaskView: View {
         presentationMode.wrappedValue.dismiss()
     }
 }
+
+struct StatsWebView: View {
+    @State private var url: String? = ""
+    @State private var loaded = false
+    
+    var body: some View {
+        ZStack {
+            if loaded, let urlStr = url, let destination = URL(string: urlStr) {
+                WebInterface(url: destination).ignoresSafeArea(.keyboard, edges: .bottom)
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear { initialize() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LoadTempURL"))) { _ in update() }
+    }
+    
+    private func initialize() {
+        let temp = UserDefaults.standard.string(forKey: "temp_url")
+        let saved = UserDefaults.standard.string(forKey: "sm_endpoint_primary") ?? ""
+        url = temp ?? saved
+        loaded = true
+        if temp != nil { UserDefaults.standard.removeObject(forKey: "temp_url") }
+    }
+    
+    private func update() {
+        if let temp = UserDefaults.standard.string(forKey: "temp_url"), !temp.isEmpty {
+            loaded = false
+            url = temp
+            UserDefaults.standard.removeObject(forKey: "temp_url")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { loaded = true }
+        }
+    }
+}
+
+struct WebInterface: UIViewRepresentable {
+    let url: URL
+    
+    func makeCoordinator() -> WebManager { WebManager() }
+    
+    func makeUIView(context: Context) -> WKWebView {
+        let web = constructWeb(manager: context.coordinator)
+        context.coordinator.web = web
+        context.coordinator.load(url, in: web)
+        Task { await context.coordinator.restoreCookies(in: web) }
+        return web
+    }
+    
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    
+    private func constructWeb(manager: WebManager) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.processPool = WKProcessPool()
+        
+        let prefs = WKPreferences()
+        prefs.javaScriptEnabled = true
+        prefs.javaScriptCanOpenWindowsAutomatically = true
+        config.preferences = prefs
+        
+        let controller = WKUserContentController()
+        let script = WKUserScript(
+            source: """
+            (function() {
+                const meta = document.createElement('meta');
+                meta.name = 'viewport';
+                meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                document.head.appendChild(meta);
+                const style = document.createElement('style');
+                style.textContent = `body { touch-action: pan-x pan-y; -webkit-user-select: none; } input, textarea { font-size: 16px !important; }`;
+                document.head.appendChild(style);
+                document.addEventListener('gesturestart', e => e.preventDefault());
+                document.addEventListener('gesturechange', e => e.preventDefault());
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        controller.addUserScript(script)
+        config.userContentController = controller
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        
+        let pagePrefs = WKWebpagePreferences()
+        pagePrefs.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = pagePrefs
+        
+        let web = WKWebView(frame: .zero, configuration: config)
+        web.scrollView.minimumZoomScale = 1.0
+        web.scrollView.maximumZoomScale = 1.0
+        web.scrollView.bounces = false
+        web.scrollView.bouncesZoom = false
+        web.allowsBackForwardNavigationGestures = true
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.navigationDelegate = manager
+        web.uiDelegate = manager
+        return web
+    }
+}
+
+final class WebManager: NSObject {
+    weak var web: WKWebView?
+    
+    private var steps = 0
+    private var stepLimit = 70
+    private var last: URL?
+    private var route: [URL] = []
+    private var stable: URL?
+    private var tabs: [WKWebView] = []
+    private let jar = "stats_cookies"
+    
+    func load(_ url: URL, in web: WKWebView) {
+        print("📊 [Stats] Load: \(url.absoluteString)")
+        route = [url]
+        steps = 0
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        web.load(req)
+    }
+    
+    func restoreCookies(in web: WKWebView) {
+        guard let data = UserDefaults.standard.object(forKey: jar) as? [String: [String: [HTTPCookiePropertyKey: AnyObject]]] else { return }
+        let store = web.configuration.websiteDataStore.httpCookieStore
+        let cookies = data.values.flatMap { $0.values }.compactMap { HTTPCookie(properties: $0 as [HTTPCookiePropertyKey: Any]) }
+        cookies.forEach { store.setCookie($0) }
+    }
+    
+    func persistCookies(from web: WKWebView) {
+        let store = web.configuration.websiteDataStore.httpCookieStore
+        store.getAllCookies { [weak self] cookies in
+            guard let self = self else { return }
+            var data: [String: [String: [HTTPCookiePropertyKey: Any]]] = [:]
+            for cookie in cookies {
+                var domain = data[cookie.domain] ?? [:]
+                if let props = cookie.properties { domain[cookie.name] = props }
+                data[cookie.domain] = domain
+            }
+            UserDefaults.standard.set(data, forKey: self.jar)
+        }
+    }
+}
+
+extension WebManager: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        last = url
+        if canNavigate(url) {
+            decisionHandler(.allow)
+        } else {
+            UIApplication.shared.open(url, options: [:])
+            decisionHandler(.cancel)
+        }
+    }
+    
+    private func canNavigate(_ url: URL) -> Bool {
+        let scheme = (url.scheme ?? "").lowercased()
+        let path = url.absoluteString.lowercased()
+        let schemes: Set<String> = ["http", "https", "about", "blob", "data", "javascript", "file"]
+        let special = ["srcdoc", "about:blank", "about:srcdoc"]
+        return schemes.contains(scheme) || special.contains { path.hasPrefix($0) } || path == "about:blank"
+    }
+    
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        steps += 1
+        if steps > stepLimit {
+            webView.stopLoading()
+            if let recovery = last { webView.load(URLRequest(url: recovery)) }
+            steps = 0
+            return
+        }
+        last = webView.url
+        persistCookies(from: webView)
+    }
+    
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if let current = webView.url {
+            stable = current
+            print("✅ [Stats] Commit: \(current.absoluteString)")
+        }
+    }
+    
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let current = webView.url { stable = current }
+        steps = 0
+        persistCookies(from: webView)
+    }
+    
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let code = (error as NSError).code
+        if code == NSURLErrorHTTPTooManyRedirects, let recovery = last {
+            webView.load(URLRequest(url: recovery))
+        }
+    }
+    
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust, let trust = challenge.protectionSpace.serverTrust {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
+    }
+}
+
+extension WebManager: WKUIDelegate {
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard navigationAction.targetFrame == nil else { return nil }
+        let tab = WKWebView(frame: webView.bounds, configuration: configuration)
+        tab.navigationDelegate = self
+        tab.uiDelegate = self
+        tab.allowsBackForwardNavigationGestures = true
+        webView.addSubview(tab)
+        tab.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            tab.topAnchor.constraint(equalTo: webView.topAnchor),
+            tab.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+            tab.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+            tab.trailingAnchor.constraint(equalTo: webView.trailingAnchor)
+        ])
+        let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(closeTab(_:)))
+        gesture.edges = .left
+        tab.addGestureRecognizer(gesture)
+        tabs.append(tab)
+        if let url = navigationAction.request.url, url.absoluteString != "about:blank" {
+            tab.load(navigationAction.request)
+        }
+        return tab
+    }
+    
+    @objc private func closeTab(_ recognizer: UIScreenEdgePanGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        if let last = tabs.last {
+            last.removeFromSuperview()
+            tabs.removeLast()
+        } else {
+            web?.goBack()
+        }
+    }
+    
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        completionHandler()
+    }
+}
+

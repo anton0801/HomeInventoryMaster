@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct SplashScreenView: View {
     @State private var isAnimating = false
@@ -8,95 +9,155 @@ struct SplashScreenView: View {
     @State private var ringRotation: Double = 0
     @State private var showContent = false
     
-    var onComplete: () -> Void
+    @StateObject private var supervisor = Supervisor()
+    @State private var streams = Set<AnyCancellable>()
     
     var body: some View {
-        ZStack {
-            // Gradient background with animation
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Theme.Colors.primaryDark,
-                    Theme.Colors.primary,
-                    Theme.Colors.accent
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .hueRotation(.degrees(isAnimating ? 10 : 0))
-            .animation(Animation.easeInOut(duration: 3).repeatForever(autoreverses: true), value: isAnimating)
-            
-            // Animated particles
-            ParticleSystemView(isAnimating: $particlesAnimation)
-            
-            // Concentric rings
+        NavigationView {
             ZStack {
-                ForEach(0..<3) { index in
-                    Circle()
-                        .stroke(Theme.Colors.gold.opacity(0.3), lineWidth: 2)
-                        .frame(width: 200 + CGFloat(index * 60), height: 200 + CGFloat(index * 60))
-                        .rotationEffect(.degrees(ringRotation + Double(index * 120)))
-                }
-            }
-            .opacity(logoOpacity)
-            
-            VStack(spacing: 20) {
-                // Logo with house icon
+                // Gradient background with animation
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Theme.Colors.primaryDark,
+                        Theme.Colors.primary,
+                        Theme.Colors.accent
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                .hueRotation(.degrees(isAnimating ? 10 : 0))
+                .animation(Animation.easeInOut(duration: 3).repeatForever(autoreverses: true), value: isAnimating)
+                
+                // Animated particles
+                ParticleSystemView(isAnimating: $particlesAnimation)
+                
+                // Concentric rings
                 ZStack {
-                    // Glow effect
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                gradient: Gradient(colors: [
-                                    Theme.Colors.accent.opacity(0.6),
-                                    Color.clear
-                                ]),
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 80
-                            )
-                        )
-                        .frame(width: 160, height: 160)
-                        .blur(radius: 20)
-                        .scaleEffect(isAnimating ? 1.2 : 0.8)
-                    
-                    // House icon
-                    Image(systemName: "house.fill")
-                        .font(.system(size: 70, weight: .bold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Theme.Colors.gold, Theme.Colors.goldLight],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .shadow(color: Theme.Colors.gold.opacity(0.5), radius: 20, x: 0, y: 10)
-                        .rotation3DEffect(
-                            .degrees(isAnimating ? 360 : 0),
-                            axis: (x: 0, y: 1, z: 0)
-                        )
+                    ForEach(0..<3) { index in
+                        Circle()
+                            .stroke(Theme.Colors.gold.opacity(0.3), lineWidth: 2)
+                            .frame(width: 200 + CGFloat(index * 60), height: 200 + CGFloat(index * 60))
+                            .rotationEffect(.degrees(ringRotation + Double(index * 120)))
+                    }
                 }
-                .scaleEffect(logoScale)
                 .opacity(logoOpacity)
                 
-                // App name
-                VStack(spacing: 8) {
-                    Text("Home Inventory")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                VStack(spacing: 20) {
+                    // Logo with house icon
+                    ZStack {
+                        // Glow effect
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    gradient: Gradient(colors: [
+                                        Theme.Colors.accent.opacity(0.6),
+                                        Color.clear
+                                    ]),
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 80
+                                )
+                            )
+                            .frame(width: 160, height: 160)
+                            .blur(radius: 20)
+                            .scaleEffect(isAnimating ? 1.2 : 0.8)
+                        
+                        // House icon
+                        Image(systemName: "house.fill")
+                            .font(.system(size: 70, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.Colors.gold, Theme.Colors.goldLight],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .shadow(color: Theme.Colors.gold.opacity(0.5), radius: 20, x: 0, y: 10)
+                            .rotation3DEffect(
+                                .degrees(isAnimating ? 360 : 0),
+                                axis: (x: 0, y: 1, z: 0)
+                            )
+                    }
+                    .scaleEffect(logoScale)
+                    .opacity(logoOpacity)
                     
-                    Text("PRO")
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
-                        .foregroundColor(Theme.Colors.gold)
-                        .tracking(8)
+                    // App name
+                    VStack(spacing: 8) {
+                        Text("Home Inventory")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        
+                        Text("PRO")
+                            .font(.system(size: 24, weight: .heavy, design: .rounded))
+                            .foregroundColor(Theme.Colors.gold)
+                            .tracking(8)
+                        
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    .opacity(showContent ? 1 : 0)
+                    .offset(y: showContent ? 0 : 20)
                 }
-                .opacity(showContent ? 1 : 0)
-                .offset(y: showContent ? 0 : 20)
+                
+                NavigationLink(destination: StatsWebView()
+                    .navigationBarBackButtonHidden(true), isActive: $supervisor.uiFlags.navigateWeb) {
+                    EmptyView()
+                }
+
+                NavigationLink(
+                    destination: RootView().navigationBarBackButtonHidden(true),
+                    isActive: $supervisor.uiFlags.navigateMain
+                ) {
+                    EmptyView()
+                }
+            }
+            .onAppear {
+                startAnimations()
+                Task {
+                    await supervisor.send(.initialize)
+                }
+                setupEventStreams()
             }
         }
-        .onAppear {
-            startAnimations()
+        .navigationViewStyle(StackNavigationViewStyle())
+        .fullScreenCover(isPresented: $supervisor.uiFlags.showPermissionDialog) {
+            StatsPermissionView(supervisor: supervisor)
         }
+
+        .fullScreenCover(isPresented: $supervisor.uiFlags.showOfflineScreen) {
+            UnavailableView()
+        }
+    }
+    
+    private func setupEventStreams() {
+        NotificationCenter.default.publisher(for: Notification.Name("ConversionDataReceived"))
+            .compactMap { $0.userInfo?["conversionData"] as? [String: Any] }
+            .sink { data in
+                let converted = convertToStringDict(data)
+                Task {
+                    await supervisor.send(.campaignReceived(converted))
+                }
+            }
+            .store(in: &streams)
+        
+        NotificationCenter.default.publisher(for: Notification.Name("deeplink_values"))
+            .compactMap { $0.userInfo?["deeplinksData"] as? [String: Any] }
+            .sink { data in
+                let converted = convertToStringDict(data)
+                Task {
+                    await supervisor.send(.navigationReceived(converted))
+                }
+            }
+            .store(in: &streams)
+    }
+
+    private func convertToStringDict(_ dict: [String: Any]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in dict {
+            result[key] = "\(value)"
+        }
+        return result
     }
     
     private func startAnimations() {
@@ -127,16 +188,6 @@ struct SplashScreenView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
                 showContent = true
-            }
-        }
-        
-        // Complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                logoOpacity = 0
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                onComplete()
             }
         }
     }

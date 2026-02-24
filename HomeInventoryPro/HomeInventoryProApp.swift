@@ -2,36 +2,41 @@ import SwiftUI
 
 @main
 struct HomeInventoryProApp: App {
+
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    
+    var body: some Scene {
+        WindowGroup {
+            SplashScreenView()
+        }
+    }
+    
+   
+}
+
+struct RootView: View {
+    
     @StateObject private var coreDataManager = CoreDataManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var showSplash = true
     
     init() {
         setupAppearance()
     }
     
-    var body: some Scene {
-        WindowGroup {
-            ZStack {
-                if showSplash {
-                    SplashScreenView {
-                        withAnimation {
-                            showSplash = false
-                        }
-                    }
-                } else if !hasCompletedOnboarding {
-                    OnboardingView {
-                        withAnimation {
-                            hasCompletedOnboarding = true
-                        }
-                    }
-                } else {
-                    DashboardView()
-                        .environment(\.managedObjectContext, coreDataManager.container.viewContext)
-                        .environmentObject(notificationManager)
-                }
-            }
+    var body: some View {
+        ZStack {
+            if !hasCompletedOnboarding {
+               OnboardingView {
+                   withAnimation {
+                       hasCompletedOnboarding = true
+                   }
+               }
+           } else {
+               DashboardView()
+                   .environment(\.managedObjectContext, coreDataManager.container.viewContext)
+                   .environmentObject(notificationManager)
+           }
         }
     }
     
@@ -62,4 +67,5 @@ struct HomeInventoryProApp: App {
             UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
         }
     }
+    
 }

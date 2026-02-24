@@ -1,5 +1,108 @@
 import SwiftUI
 
+struct StatsPermissionView: View {
+    @ObservedObject var supervisor: Supervisor
+    
+    var body: some View {
+        GeometryReader { g in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                Image(g.size.width > g.size.height ? "home_alerts_bg2" : "home_alerts_bg")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: g.size.width, height: g.size.height)
+                    .ignoresSafeArea()
+                    .opacity(0.9)
+                
+                if g.size.width < g.size.height {
+                    VStack(spacing: 12) {
+                        Spacer()
+                        
+                        Text("ALLOW NOTIFICATIONS ABOUT\nBONUSES AND PROMOS")
+                            .font(.custom("Lalezar-Regular", size: 26))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("STAY TUNED WITH BEST OFFERS FROM\nOUR CASINO")
+                            .font(.custom("Lalezar-Regular", size: 16))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .multilineTextAlignment(.center)
+                        
+                        actionButtons
+                    }
+                    .padding(.bottom, 24)
+                } else {
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 12) {
+                            Spacer()
+                            
+                            Text("ALLOW NOTIFICATIONS ABOUT\nBONUSES AND PROMOS")
+                                .font(.custom("Lalezar-Regular", size: 28))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .multilineTextAlignment(.leading)
+                            
+                            Text("STAY TUNED WITH BEST OFFERS FROM\nOUR CASINO")
+                                .font(.custom("Lalezar-Regular", size: 18))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 12)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer()
+                        VStack {
+                            Spacer()
+                            actionButtons
+                                .padding(.bottom, 20)
+                        }
+                        Spacer()
+                    }
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+    }
+    
+    private var actionButtons: some View {
+        VStack(spacing: 12) {
+            Button {
+                Task {
+                    await supervisor.send(.permissionRequested)
+                }
+            } label: {
+                Image("home_alerts_btn")
+                    .resizable()
+                    .frame(width: 300, height: 55)
+            }
+            
+            Button {
+                Task {
+                    await supervisor.send(.permissionSkipped)
+                }
+            } label: {
+                Text("SKIP")
+                    .font(.custom("Lalezar-Regular", size: 16))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, maxHeight: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(
+                                Color(hex: "000000").opacity(0.48)
+                            )
+                    )
+            }
+            .frame(width: 260)
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+
 struct EditItemView: View {
     @State var item: Item
     @Environment(\.presentationMode) var presentationMode
